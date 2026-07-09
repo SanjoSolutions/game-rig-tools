@@ -40,6 +40,28 @@ def find_deform(bone, bones):
         return bones.get(new_name)
 
 
+RIGIFY_PARENT_OVERRIDES = {
+    "DEF-breast.L": {"parent": "DEF-spine.004", "use_connect": False},
+    "DEF-breast.R": {"parent": "DEF-spine.004", "use_connect": False},
+    "DEF-elbow-helper.L": {"parent": "DEF-forearm.L", "use_connect": False},
+    "DEF-elbow-helper.R": {"parent": "DEF-forearm.R", "use_connect": False},
+    "DEF-knee-helper.L": {"parent": "DEF-shin.L", "use_connect": False},
+    "DEF-knee-helper.R": {"parent": "DEF-shin.R", "use_connect": False},
+}
+
+
+def apply_parent_overrides(bones, parent_overrides):
+    for child_name, parent_settings in parent_overrides.items():
+        parent_name = parent_settings["parent"]
+        use_connect = parent_settings["use_connect"]
+        child = bones.get(child_name)
+        parent = bones.get(parent_name)
+
+        if child and parent:
+            child.parent = parent
+            child.use_connect = use_connect
+
+
 def get_root(bone):
     if bone.parent:
         return get_root(bone.parent)
@@ -490,6 +512,8 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
                                 #                 if parent_bone:
                                 #                     if parent_bone.use_deform:
                                 #                         bone.parent = parent_bone
+
+                    apply_parent_overrides(Edit_Bones, RIGIFY_PARENT_OVERRIDES)
 
                 if self.Remove_Animation_Data:
                     game_rig.animation_data_clear()
