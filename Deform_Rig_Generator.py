@@ -47,6 +47,30 @@ def get_root(bone):
         return bone
 
 
+def get_selected_rig_pair(context):
+    scn = context.scene
+
+    if hasattr(scn, "GRT_Action_Bakery_Rig_Pairs"):
+        index = scn.GRT_Action_Bakery_Rig_Pair_Index
+        if 0 <= index < len(scn.GRT_Action_Bakery_Rig_Pairs):
+            return scn.GRT_Action_Bakery_Rig_Pairs[index]
+
+    return None
+
+
+def sync_selected_rig_pair_to_global_settings(context):
+    pair = get_selected_rig_pair(context)
+    if not pair:
+        return
+
+    settings = context.scene.GRT_Action_Bakery_Global_Settings
+
+    if pair.Source_Armature:
+        settings.Source_Armature = pair.Source_Armature
+    if pair.Target_Armature:
+        settings.Target_Armature = pair.Target_Armature
+
+
 ENUM_Hierarchy_Mode = [
     ("KEEP_EXISTING", "Keep Existing", "Keep Existing"),
     ("RIGIFY", "Rigify Hierarchy Fix", "Rigify Hierarchy Fix"),
@@ -116,12 +140,15 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
     #    RIGIFY_Disable_Stretch: bpy.props.BoolProperty(default=True)
 
     def invoke(self, context, event):
+        sync_selected_rig_pair_to_global_settings(context)
+
         scn = context.scene
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
         Action_Bakery = scn.GRT_Action_Bakery
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        pair = get_selected_rig_pair(context)
+        control_rig = pair.Source_Armature if pair else Global_Settings.Source_Armature
+        deform_rig = pair.Target_Armature if pair else Global_Settings.Target_Armature
 
         if deform_rig:
             self.Deform_Armature_Name = deform_rig.name
@@ -133,6 +160,8 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
+        sync_selected_rig_pair_to_global_settings(context)
+
         layout = self.layout
 
         scn = context.scene
@@ -141,8 +170,9 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
         Action_Bakery = scn.GRT_Action_Bakery
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        pair = get_selected_rig_pair(context)
+        control_rig = pair.Source_Armature if pair else Global_Settings.Source_Armature
+        deform_rig = pair.Target_Armature if pair else Global_Settings.Target_Armature
 
         if Global_Settings.use_post_generation_script and Global_Settings.post_generation_script != None:
             layout.label(text="Use Post Generation Script is On", icon="INFO")
@@ -169,12 +199,20 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
             box.separator()
 
             if self.Use_Regenerate_Rig:
-                box.prop(
-                    Global_Settings,
-                    "Target_Armature",
-                    text="Game Rig",
-                    icon="ARMATURE_DATA",
-                )
+                if pair:
+                    box.prop(
+                        pair,
+                        "Target_Armature",
+                        text="Game Rig",
+                        icon="ARMATURE_DATA",
+                    )
+                else:
+                    box.prop(
+                        Global_Settings,
+                        "Target_Armature",
+                        text="Game Rig",
+                        icon="ARMATURE_DATA",
+                    )
 
             else:
                 box.prop(self, "Deform_Armature_Name", text="Name")
@@ -342,14 +380,17 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
     #        layout.prop(self, "RIGIFY_Disable_Stretch", text="Disable Rigify Stretch")
 
     def execute(self, context):
+        sync_selected_rig_pair_to_global_settings(context)
+
         object = context.object
 
         scn = context.scene
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
         Action_Bakery = scn.GRT_Action_Bakery
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        pair = get_selected_rig_pair(context)
+        control_rig = pair.Source_Armature if pair else Global_Settings.Source_Armature
+        deform_rig = pair.Target_Armature if pair else Global_Settings.Target_Armature
 
         if self.Hierarchy_Mode == "KEEP_EXISTING":
             self.Rigify_Hierarchy_Fix = False
@@ -403,6 +444,8 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
                     game_rig.name = self.Deform_Armature_Name
                     if not self.Use_Legacy:
                         Global_Settings.Target_Armature = game_rig
+                        if pair:
+                            pair.Target_Armature = game_rig
 
                 game_rig.display_type = "SOLID"
                 game_rig.show_in_front = True

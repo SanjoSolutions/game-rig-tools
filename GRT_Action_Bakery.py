@@ -53,71 +53,74 @@ class GRT_OT_Toggle_Rig(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        scn = context.scene
-        Global_Settings = scn.GRT_Action_Bakery_Global_Settings
-
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
-
-        if control_rig and deform_rig:
+        if len(get_all_rig_pairs(context)) > 0:
             return True
 
     def execute(self, context):
         scn = context.scene
-
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        rig_pairs = get_all_rig_pairs(context)
+        control_rigs = unique_objects([pair[0] for pair in rig_pairs])
+        deform_rigs = unique_objects([pair[1] for pair in rig_pairs])
+        first_control_rig = rig_pairs[0][0]
+        show_control_rigs = first_control_rig.hide_viewport
+        current_mode = context.object.mode if context.object else "OBJECT"
 
-        if control_rig.hide_viewport:
-            control_rig.hide_set(False)
-            deform_rig.hide_set(False)
-            control_rig.hide_viewport = False
-            deform_rig.hide_viewport = False
-            control_rig.select_set(True)
-            deform_rig.select_set(True)
-            context.view_layer.objects.active = control_rig
-            current_mode = deform_rig.mode
+        first_control_rig.hide_set(False)
+        first_control_rig.hide_viewport = False
+        context.view_layer.objects.active = first_control_rig
 
+        if context.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
 
+        bpy.ops.object.select_all(action="DESELECT")
+
+        for control_rig in control_rigs:
+            control_rig.hide_set(False)
+            control_rig.hide_viewport = False
+        for deform_rig in deform_rigs:
+            deform_rig.hide_set(False)
+            deform_rig.hide_viewport = False
+
+        if show_control_rigs:
             if Global_Settings.toggle_mute:
                 bpy.ops.gamerigtool.toogle_game_rig_constraint(
                     mute=False, use_selected=False
                 )
 
-            control_rig.hide_viewport = False
-            deform_rig.hide_viewport = True
+            for control_rig in control_rigs:
+                control_rig.hide_viewport = False
+                control_rig.select_set(True)
+            for deform_rig in deform_rigs:
+                deform_rig.hide_viewport = True
 
-            if current_mode == "POSE":
-                bpy.ops.object.mode_set(mode="POSE", toggle=False)
+            context.view_layer.objects.active = control_rigs[0]
 
-            if current_mode == "EDIT":
-                bpy.ops.object.mode_set(mode="EDIT", toggle=False)
         else:
-            control_rig.hide_set(False)
-            deform_rig.hide_set(False)
-            control_rig.hide_viewport = False
-            deform_rig.hide_viewport = False
-            control_rig.select_set(True)
-            deform_rig.select_set(True)
-            context.view_layer.objects.active = deform_rig
-            current_mode = control_rig.mode
-
-            bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
             if Global_Settings.toggle_mute:
                 bpy.ops.gamerigtool.toogle_game_rig_constraint(
                     mute=True, use_selected=False
                 )
 
-            control_rig.hide_viewport = True
-            deform_rig.hide_viewport = False
+            for control_rig in control_rigs:
+                control_rig.hide_viewport = True
+            for deform_rig in deform_rigs:
+                deform_rig.hide_viewport = False
+                deform_rig.select_set(True)
 
-            if current_mode == "POSE":
+            context.view_layer.objects.active = deform_rigs[0]
+
+        if current_mode == "POSE":
+            try:
                 bpy.ops.object.mode_set(mode="POSE", toggle=False)
-            if current_mode == "EDIT":
+            except RuntimeError:
+                pass
+        if current_mode == "EDIT":
+            try:
                 bpy.ops.object.mode_set(mode="EDIT", toggle=False)
+            except RuntimeError:
+                pass
 
         #
 
@@ -164,6 +167,65 @@ ENUM_list_operation = [
     ("LOAD_FROM_NLA", "Load From NLA", "Load From NLA"),
     ("CLEAR_ALL_ACTIONS", "Clear All Action", "Clear All Action"),
 ]
+
+
+ENUM_rig_pair_operation = [
+    ("ADD", "Add", "Add"),
+    ("REMOVE", "Remove", "Remove"),
+    ("UP", "Up", "Up"),
+    ("DOWN", "Down", "Down"),
+]
+
+
+class GRT_Action_Bakery_Rig_Pair_List_Operator(bpy.types.Operator):
+    """Rig Pair List Operator"""
+
+    bl_idname = "gamerigtool.action_bakery_rig_pair_list_operator"
+    bl_label = "Rig Pair List Operator"
+    bl_options = {"UNDO", "REGISTER"}
+
+    operation: bpy.props.EnumProperty(items=ENUM_rig_pair_operation)
+    index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        scn = context.scene
+        settings = scn.GRT_Action_Bakery_Global_Settings
+        item_list = scn.GRT_Action_Bakery_Rig_Pairs
+        item_index = self.index
+
+        if self.operation == "ADD":
+            item = item_list.add()
+            if context.object and context.object.type == "ARMATURE":
+                item.Source_Armature = context.object
+            else:
+                item.Source_Armature = settings.Source_Armature
+            item.Target_Armature = settings.Target_Armature
+            scn.GRT_Action_Bakery_Rig_Pair_Index = len(item_list) - 1
+            Utility.update_UI()
+            return {"FINISHED"}
+
+        if self.operation == "REMOVE":
+            if len(item_list) > 0 and 0 <= item_index < len(item_list):
+                item_list.remove(item_index)
+                if len(item_list) == scn.GRT_Action_Bakery_Rig_Pair_Index:
+                    scn.GRT_Action_Bakery_Rig_Pair_Index = len(item_list) - 1
+                Utility.update_UI()
+            return {"FINISHED"}
+
+        if self.operation == "UP":
+            if item_index >= 1:
+                item_list.move(item_index, item_index - 1)
+                scn.GRT_Action_Bakery_Rig_Pair_Index -= 1
+            return {"FINISHED"}
+
+        if self.operation == "DOWN":
+            if len(item_list) - 1 > item_index:
+                item_list.move(item_index, item_index + 1)
+                scn.GRT_Action_Bakery_Rig_Pair_Index += 1
+            return {"FINISHED"}
+
+        Utility.update_UI()
+        return {"FINISHED"}
 
 
 class GRT_Action_Bakery_List_Operator(bpy.types.Operator):
@@ -371,6 +433,32 @@ class GRT_UL_Action_Bakery_List(bpy.types.UIList):
         # row.prop(Action, "name", text="")
 
 
+class GRT_UL_Action_Bakery_Rig_Pair_List(bpy.types.UIList):
+    def draw_item(
+        self, context, layout, data, item, icon, active_data, active_propname, index
+    ):
+        row = layout.row(align=True)
+        row.prop(item, "enabled", text="")
+
+        if item.Source_Armature:
+            row.label(text=item.Source_Armature.name, icon="OUTLINER_OB_ARMATURE")
+        else:
+            row.label(text="Missing Control Rig", icon="ERROR")
+
+        row.label(text="", icon="FORWARD")
+
+        if item.Target_Armature:
+            row.label(text=item.Target_Armature.name, icon="OUTLINER_OB_ARMATURE")
+        else:
+            row.label(text="Missing Game Rig", icon="ERROR")
+
+        Operator = row.operator(
+            "gamerigtool.action_bakery_rig_pair_list_operator", text="", icon="X"
+        )
+        Operator.operation = "REMOVE"
+        Operator.index = index
+
+
 class GRT_PT_Action_Bakery(bpy.types.Panel):
     bl_label = "Game Rig Tools"
     bl_space_type = "VIEW_3D"
@@ -417,13 +505,15 @@ class GRT_PT_Action_Bakery(bpy.types.Panel):
 
         row = layout.row(align=True)
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        active_pair = get_selected_rig_pair(context)
+        control_rig, deform_rig = get_selected_rig_pair_objects(context)
 
         constraint_state = []
 
-        if deform_rig:
-            for bone in deform_rig.pose.bones:
+        target_rigs = unique_objects([pair[1] for pair in get_all_rig_pairs(context)])
+
+        for target_rig in target_rigs:
+            for bone in target_rig.pose.bones:
                 for constraint in bone.constraints:
                     constraint_state.append(not constraint.mute)
 
@@ -467,25 +557,68 @@ class GRT_PT_Action_Bakery(bpy.types.Panel):
         # layout.label(text="Bake Settings")
 
         col = layout.column(align=True)
-        col.label(text="Control Rig")
-
+        col.label(text="Rig Pairs")
         row = col.row(align=True)
-        row.prop(Global_Settings, "Source_Armature", text="", placeholder="Control Rig")
-        if Global_Settings.Source_Armature:
-            row.prop(Global_Settings.Source_Armature, "hide_viewport", text="")
-        row.prop(
-            Global_Settings,
-            "active_to_control_rig",
-            text="",
-            icon="EYEDROPPER",
+        col2 = row.column(align=True)
+        col2.template_list(
+            "GRT_UL_Action_Bakery_Rig_Pair_List",
+            "",
+            scn,
+            "GRT_Action_Bakery_Rig_Pairs",
+            scn,
+            "GRT_Action_Bakery_Rig_Pair_Index",
+            rows=2,
         )
 
-        col.label(text="Game Rig")
-        row = col.row(align=True)
-        row.prop(Global_Settings, "Target_Armature", text="", placeholder="Game Rig")
-        if Global_Settings.Target_Armature:
-            row.prop(Global_Settings.Target_Armature, "hide_viewport", text="")
-        row.prop(Global_Settings, "active_to_game_rig", text="", icon="EYEDROPPER")
+        col3 = row.column(align=True)
+        Operator = col3.operator(
+            "gamerigtool.action_bakery_rig_pair_list_operator", text="", icon="ADD"
+        )
+        Operator.operation = "ADD"
+        Operator.index = scn.GRT_Action_Bakery_Rig_Pair_Index
+
+        Operator = col3.operator(
+            "gamerigtool.action_bakery_rig_pair_list_operator", text="", icon="REMOVE"
+        )
+        Operator.operation = "REMOVE"
+        Operator.index = scn.GRT_Action_Bakery_Rig_Pair_Index
+
+        col3.separator()
+
+        Operator = col3.operator(
+            "gamerigtool.action_bakery_rig_pair_list_operator", text="", icon="TRIA_UP"
+        )
+        Operator.operation = "UP"
+        Operator.index = scn.GRT_Action_Bakery_Rig_Pair_Index
+
+        Operator = col3.operator(
+            "gamerigtool.action_bakery_rig_pair_list_operator",
+            text="",
+            icon="TRIA_DOWN",
+        )
+        Operator.operation = "DOWN"
+        Operator.index = scn.GRT_Action_Bakery_Rig_Pair_Index
+
+        if len(scn.GRT_Action_Bakery_Rig_Pairs) > 0:
+            if scn.GRT_Action_Bakery_Rig_Pair_Index < len(
+                scn.GRT_Action_Bakery_Rig_Pairs
+            ):
+                active_pair = scn.GRT_Action_Bakery_Rig_Pairs[
+                    scn.GRT_Action_Bakery_Rig_Pair_Index
+                ]
+                col.label(text="Control Rig")
+                row = col.row(align=True)
+                row.prop(active_pair, "Source_Armature", text="")
+                if active_pair.Source_Armature:
+                    row.prop(active_pair.Source_Armature, "hide_viewport", text="")
+
+                col.label(text="Game Rig")
+                row = col.row(align=True)
+                row.prop(active_pair, "Target_Armature", text="")
+                if active_pair.Target_Armature:
+                    row.prop(active_pair.Target_Armature, "hide_viewport", text="")
+        else:
+            col.label(text="Add a rig pair to choose control and game rigs", icon="INFO")
 
         layout.separator()
 
@@ -738,12 +871,18 @@ class GRT_PT_Action_Bakery(bpy.types.Panel):
 
             # box.label(text="Baked Name: " + Change_to_Baked_Name(context, item))
 
-            if not Global_Settings.Source_Armature:
+            if len(get_rig_pairs(context)) == 0 and not Global_Settings.Source_Armature:
                 box = subpanel.box()
                 box.label(text="Select Control Rig", icon="ERROR")
-            if not Global_Settings.Target_Armature:
+            if len(get_rig_pairs(context)) == 0 and not Global_Settings.Target_Armature:
                 box = subpanel.box()
                 box.label(text="Select Game Rig", icon="ERROR")
+
+            for pair in scn.GRT_Action_Bakery_Rig_Pairs:
+                if pair.enabled and (not pair.Source_Armature or not pair.Target_Armature):
+                    box = subpanel.box()
+                    box.label(text="Enabled rig pair is incomplete", icon="ERROR")
+                    break
 
             for item in check_invalid_name(context):
                 box = subpanel.box()
@@ -936,6 +1075,16 @@ class GRT_Action_Bakery_Property_Group(bpy.types.PropertyGroup):
     LOCAL_Trim: bpy.props.IntProperty(min=0)
 
 
+class GRT_Action_Bakery_Rig_Pair_Property_Group(bpy.types.PropertyGroup):
+    enabled: bpy.props.BoolProperty(default=True)
+    Source_Armature: bpy.props.PointerProperty(
+        name="Control Armature", type=bpy.types.Object, poll=POLL_Control_Armature
+    )
+    Target_Armature: bpy.props.PointerProperty(
+        name="Game Armature", type=bpy.types.Object, poll=POLL_Deform_Armature
+    )
+
+
 def UPDATE_active_to_control_rig(self, context):
     if context.object:
         if context.object.type == "ARMATURE":
@@ -1073,6 +1222,216 @@ def clear_pose(obj):
         n.scale = (1, 1, 1)
 
 
+def get_selected_rig_pair(context):
+    scn = context.scene
+
+    if hasattr(scn, "GRT_Action_Bakery_Rig_Pairs"):
+        index = scn.GRT_Action_Bakery_Rig_Pair_Index
+        if 0 <= index < len(scn.GRT_Action_Bakery_Rig_Pairs):
+            return scn.GRT_Action_Bakery_Rig_Pairs[index]
+
+    return None
+
+
+def get_selected_rig_pair_objects(context):
+    settings = context.scene.GRT_Action_Bakery_Global_Settings
+    pair = get_selected_rig_pair(context)
+
+    if pair:
+        if pair.Source_Armature != pair.Target_Armature:
+            return pair.Source_Armature, pair.Target_Armature
+
+    if settings.Source_Armature and settings.Target_Armature:
+        if settings.Source_Armature != settings.Target_Armature:
+            return settings.Source_Armature, settings.Target_Armature
+
+    return None, None
+
+
+def sync_selected_rig_pair_to_global_settings(context):
+    settings = context.scene.GRT_Action_Bakery_Global_Settings
+    control_rig, deform_rig = get_selected_rig_pair_objects(context)
+
+    if control_rig:
+        settings.Source_Armature = control_rig
+    if deform_rig:
+        settings.Target_Armature = deform_rig
+
+
+def get_all_rig_pairs(context):
+    scn = context.scene
+    settings = scn.GRT_Action_Bakery_Global_Settings
+    pairs = []
+
+    for item in scn.GRT_Action_Bakery_Rig_Pairs:
+        if item.Source_Armature and item.Target_Armature:
+            if item.Source_Armature != item.Target_Armature:
+                pairs.append((item.Source_Armature, item.Target_Armature))
+
+    if len(pairs) == 0 and settings.Source_Armature and settings.Target_Armature:
+        if settings.Source_Armature != settings.Target_Armature:
+            pairs.append((settings.Source_Armature, settings.Target_Armature))
+
+    return pairs
+
+
+def get_rig_pairs(context):
+    scn = context.scene
+    settings = scn.GRT_Action_Bakery_Global_Settings
+    pairs = []
+
+    for item in scn.GRT_Action_Bakery_Rig_Pairs:
+        if item.enabled and item.Source_Armature and item.Target_Armature:
+            if item.Source_Armature != item.Target_Armature:
+                pairs.append((item.Source_Armature, item.Target_Armature))
+
+    if len(pairs) == 0 and settings.Source_Armature and settings.Target_Armature:
+        if settings.Source_Armature != settings.Target_Armature:
+            pairs.append((settings.Source_Armature, settings.Target_Armature))
+
+    return pairs
+
+
+def unique_objects(objects):
+    unique = []
+    for obj in objects:
+        if obj and obj not in unique:
+            unique.append(obj)
+    return unique
+
+
+def set_constraints_mute(obj, mute):
+    if obj and obj.pose:
+        for bone in obj.pose.bones:
+            for constraint in bone.constraints:
+                constraint.mute = mute
+
+
+def action_slot_matches_object(slot, obj):
+    slot_names = [
+        getattr(slot, "name_display", ""),
+        getattr(slot, "identifier", ""),
+    ]
+    expected_identifier = obj.id_type[:2] + obj.name
+
+    for slot_name in slot_names:
+        if slot_name in {obj.name, expected_identifier}:
+            return True
+
+    return False
+
+
+def assign_action_to_object(obj, action):
+    animation_data = obj.animation_data_create()
+
+    if animation_data.use_tweak_mode:
+        animation_data.use_tweak_mode = False
+
+    animation_data.action = action
+
+    action_slot = None
+    for slot in animation_data.action_suitable_slots:
+        if action_slot_matches_object(slot, obj):
+            action_slot = slot
+            break
+
+    if action_slot is None:
+        for slot in animation_data.action_suitable_slots:
+            action_slot = slot
+            break
+
+    if action_slot is not None:
+        animation_data.action_slot = action_slot
+
+
+def find_action_slot_by_identifier(action, slot_identifier):
+    if not action or not slot_identifier:
+        return None
+
+    for slot in getattr(action, "slots", []):
+        if getattr(slot, "identifier", "") == slot_identifier:
+            return slot
+
+    return None
+
+
+def ensure_action_slot_for_object(action, obj):
+    for slot in getattr(action, "slots", []):
+        if action_slot_matches_object(slot, obj):
+            return slot
+
+    return action.slots.new(obj.id_type, obj.name)
+
+
+def assign_destination_action_to_object(obj, action):
+    animation_data = obj.animation_data_create()
+
+    if animation_data.use_tweak_mode:
+        animation_data.use_tweak_mode = False
+
+    animation_data.action = action
+    animation_data.action_slot = ensure_action_slot_for_object(action, obj)
+
+
+def make_destination_action(action_name, overwrite):
+    if overwrite:
+        existing_action = bpy.data.actions.get(action_name)
+        if existing_action:
+            bpy.data.actions.remove(existing_action, do_unlink=True)
+
+    return bpy.data.actions.new(action_name)
+
+
+def action_fcurves(action):
+    if not action:
+        return
+
+    if hasattr(action, "layers") and len(action.layers) > 0:
+        for layer in action.layers:
+            for strip in layer.strips:
+                for channelbag in strip.channelbags:
+                    for fcurve in channelbag.fcurves:
+                        yield fcurve
+    else:
+        for fcurve in action.fcurves:
+            yield fcurve
+
+
+def offset_action_to_frame_one(action):
+    if not action:
+        return
+
+    start_frame = int(action.frame_range[0])
+    for fcurve in action_fcurves(action):
+        for kp in fcurve.keyframe_points:
+            kp.co.x = kp.co.x - start_frame + 1
+
+
+def push_action_to_nla(obj, action, overwrite):
+    if not obj or not action:
+        return
+
+    animation_data = obj.animation_data_create()
+
+    if overwrite:
+        for track in animation_data.nla_tracks:
+            if track.name == action.name:
+                for _ in track.strips:
+                    for strip in track.strips:
+                        track.strips.remove(strip)
+                        break
+
+        for _ in animation_data.nla_tracks:
+            for track in animation_data.nla_tracks:
+                if len(track.strips) == 0 and track.name == action.name:
+                    animation_data.nla_tracks.remove(track)
+                    break
+
+    track = animation_data.nla_tracks.new()
+    track.name = action.name
+    track.strips.new(action.name, int(action.frame_range[0]), action)
+
+
 class GRT_Bake_Action_Bakery(bpy.types.Operator):
     bl_idname = "gamerigtool.bake_action_bakery"
     bl_label = "Bake Action Bakery"
@@ -1082,16 +1441,13 @@ class GRT_Bake_Action_Bakery(bpy.types.Operator):
     def poll(cls, context):
         scn = context.scene
 
-        Global_Settings = scn.GRT_Action_Bakery_Global_Settings
-
-        if Global_Settings.Source_Armature and Global_Settings.Target_Armature:
+        if len(get_rig_pairs(context)) > 0:
             # return True
 
             if len(check_invalid_name(context)) == 0:
                 return True
 
-        else:
-            return False
+        return False
 
     def draw(self, context):
         layout = self.layout
@@ -1112,289 +1468,163 @@ class GRT_Bake_Action_Bakery(bpy.types.Operator):
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
         Action_Bakery = scn.GRT_Action_Bakery
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        rig_pairs = get_rig_pairs(context)
+        control_rigs = unique_objects([pair[0] for pair in rig_pairs])
+        deform_rigs = unique_objects([pair[1] for pair in rig_pairs])
+        all_rigs = unique_objects(control_rigs + deform_rigs)
+        animation_state = {}
 
-        vis = deform_rig.hide_get()
-        vis_view = deform_rig.hide_viewport
-        ctrl_vis = control_rig.hide_get()
-        ctrl_vis_view = control_rig.hide_viewport
+        for obj in all_rigs:
+            obj.hide_set(False)
+            obj.hide_viewport = False
 
-        control_rig.hide_set(False)
-        deform_rig.hide_set(False)
-        control_rig.hide_viewport = False
-        deform_rig.hide_viewport = False
+            if obj.animation_data:
+                action = obj.animation_data.action
+                action_slot = obj.animation_data.action_slot
+                animation_state[obj] = {
+                    "use_nla": obj.animation_data.use_nla,
+                    "action_name": action.name if action else None,
+                    "action_slot_identifier": (
+                        action_slot.identifier if action_slot else None
+                    ),
+                }
+                obj.animation_data.use_nla = False
+            else:
+                animation_state[obj] = {
+                    "use_nla": None,
+                    "action_name": None,
+                    "action_slot_identifier": None,
+                }
 
-        NLA_Strip_Check = []
-
-        CTRL_Save_Use_NLA = None
-        DEF_Save_Use_NLA = None
-
-        CTRL_Save_Use_ACTION = None
-
-        if control_rig.animation_data:
-            CTRL_Save_Use_NLA = control_rig.animation_data.use_nla
-            control_rig.animation_data.use_nla = False
-            CTRL_Save_Use_ACTION = control_rig.animation_data.action
-
-        if deform_rig.animation_data:
-            DEF_Save_Use_NLA = deform_rig.animation_data.use_nla
-            deform_rig.animation_data.use_nla = False
-
-        if control_rig and deform_rig:
+        try:
             if Global_Settings.GLOBAL_Clear_Transform_Before_Bake:
-                clear_pose(control_rig)
-                clear_pose(deform_rig)
+                for obj in all_rigs:
+                    clear_pose(obj)
 
-            if control_rig.type == "ARMATURE" and deform_rig.type == "ARMATURE":
-                Control_Rig_Action_Save = None
+            for Baker in Action_Bakery:
+                if not Baker.Action or not Baker.Bake_Select:
+                    continue
 
-                for Baker in Action_Bakery:
-                    if control_rig.animation_data:
-                        # CTRL_Save_Use_NLA = control_rig.animation_data.use_nla
-                        # DEF_Save_Use_NLA = deform_rig.animation_data.use_nla
+                action = Baker.Action
 
-                        # control_rig.animation_data.use_nla = False
-                        # deform_rig.animation_data.use_nla = False
+                if Global_Settings.Pre_Unmute_Constraint:
+                    for deform_rig in deform_rigs:
+                        set_constraints_mute(deform_rig, False)
 
-                        # for nla_track in control_rig.animation_data.nla_tracks:
-                        #     nla_track.is_solo = False
-                        #
-                        # if deform_rig.animation_data:
-                        #     for nla_track in deform_rig.animation_data.nla_tracks:
-                        #         nla_track.is_solo = False
+                for control_rig in control_rigs:
+                    assign_action_to_object(control_rig, action)
 
-                        if Global_Settings.Pre_Unmute_Constraint:
-                            Pose_Bone = deform_rig.pose.bones
-                            for bone in Pose_Bone:
-                                for constraint in bone.constraints:
-                                    constraint.mute = False
+                if Global_Settings.GLOBAL_Clear_Transform_Before_Bake:
+                    for obj in all_rigs:
+                        clear_pose(obj)
 
-                        if Baker.Action:
-                            if Baker.Bake_Select:
-                                action = Baker.Action
+                action_name = Change_to_Baked_Name(context, Baker)
+                if Baker.use_Local_Name and not Baker.LOCAL_Baked_Name:
+                    action_name = "Baked_" + action.name
 
-                                # for nla_track in control_rig.animation_data.nla_tracks:
-                                #     nla_track.mute = True
+                if Baker.Frame_Range_Mode == "SET":
+                    start_frame = Baker.Set_FR_Start
+                    end_frame = Baker.Set_FR_End + 1
+                if Baker.Frame_Range_Mode == "ACTION":
+                    start_frame = int(action.frame_range[0])
+                    end_frame = int(action.frame_range[1]) + 1
+                if Baker.Frame_Range_Mode == "TRIM":
+                    start_frame = int(action.frame_range[0]) + Baker.Trim_FR_Start
+                    end_frame = int(action.frame_range[1]) + 1 - Baker.Trim_FR_End
 
-                                control_rig.animation_data.action = action
+                frame = [i for i in range(start_frame, end_frame)]
+                context.scene.frame_current = start_frame
 
-                                if Global_Settings.GLOBAL_Clear_Transform_Before_Bake:
-                                    clear_pose(control_rig)
-                                    clear_pose(deform_rig)
+                destination_action = make_destination_action(
+                    action_name, Global_Settings.Overwrite
+                )
+                for deform_rig in deform_rigs:
+                    assign_destination_action_to_object(deform_rig, destination_action)
 
-                                if Baker.use_Local_Name:
-                                    if Baker.LOCAL_Baked_Name:
-                                        action_name = Baker.LOCAL_Baked_Name
-                                    else:
-                                        action_name = "Baked_" + action.name
+                obj_act = [
+                    [deform_rig, destination_action] for deform_rig in deform_rigs
+                ]
 
-                                else:
-                                    if (
-                                        Global_Settings.GLOBAL_Baked_Name_Mode
-                                        == "REPLACE"
-                                    ):
-                                        action_name = action.name.replace(
-                                            Global_Settings.GLOBAL_Baked_Name_01,
-                                            Global_Settings.GLOBAL_Baked_Name_02,
-                                        )
-                                    if (
-                                        Global_Settings.GLOBAL_Baked_Name_Mode
-                                        == "PREFIX"
-                                    ):
-                                        action_name = (
-                                            Global_Settings.GLOBAL_Baked_Name_01
-                                            + action.name
-                                        )
-                                    if (
-                                        Global_Settings.GLOBAL_Baked_Name_Mode
-                                        == "SUFFIX"
-                                    ):
-                                        action_name = (
-                                            action.name
-                                            + Global_Settings.GLOBAL_Baked_Name_01
-                                        )
+                Baked_Action = anim_utils.bake_action_objects(
+                    obj_act,
+                    frames=frame,
+                    bake_options=anim_utils.BakeOptions(
+                        only_selected=Global_Settings.BAKE_SETTINGS_Only_Selected,
+                        do_pose=Global_Settings.BAKE_SETTINGS_Do_Pose,
+                        do_object=Global_Settings.BAKE_SETTINGS_Do_Object,
+                        do_visual_keying=Global_Settings.BAKE_SETTINGS_Do_Visual_Keying,
+                        do_constraint_clear=Global_Settings.BAKE_SETTINGS_Do_Constraint_Clear,
+                        do_parents_clear=Global_Settings.BAKE_SETTINGS_Do_Parent_Clear,
+                        do_clean=Global_Settings.BAKE_SETTINGS_Do_Clean,
+                        do_location=Global_Settings.BAKE_SETTINGS_Location,
+                        do_rotation=Global_Settings.BAKE_SETTINGS_Rotation,
+                        do_scale=Global_Settings.BAKE_SETTINGS_Scale,
+                        do_bbone=Global_Settings.BAKE_SETTINGS_BBone,
+                        do_custom_props=Global_Settings.BAKE_SETTINGS_Custom_Properties,
+                    ),
+                )
 
-                                    # else:
-                                    #     frame = [i for i in range(int(action.frame_range[0]), int(action.frame_range[1])+1-Global_Settings.GLOBAL_Trim_End_Frame)]
+                baked_action = next(
+                    (baked_action for baked_action in Baked_Action if baked_action),
+                    destination_action,
+                )
+                baked_action.name = action_name
 
-                                if Baker.Frame_Range_Mode == "SET":
-                                    start_frame = Baker.Set_FR_Start
-                                    end_frame = Baker.Set_FR_End + 1
-                                if Baker.Frame_Range_Mode == "ACTION":
-                                    start_frame = int(action.frame_range[0])
-                                    end_frame = int(action.frame_range[1]) + 1
-                                if Baker.Frame_Range_Mode == "TRIM":
-                                    start_frame = (
-                                        int(action.frame_range[0]) + Baker.Trim_FR_Start
-                                    )
-                                    end_frame = (
-                                        int(action.frame_range[1])
-                                        + 1
-                                        - Baker.Trim_FR_End
-                                    )
+                if Baker.offset_keyframe_to_frame_one:
+                    offset_action_to_frame_one(baked_action)
 
-                                frame = [i for i in range(start_frame, end_frame)]
+                context.view_layer.update()
 
-                                context.scene.frame_current = start_frame
+                if Global_Settings.Push_to_NLA:
+                    for deform_rig in deform_rigs:
+                        push_action_to_nla(
+                            deform_rig, baked_action, Global_Settings.Overwrite
+                        )
 
-                                # if Baker.use_Local_Trim:
-                                #     frame = [i for i in range(int(action.frame_range[0]), int(action.frame_range[1])+1-Baker.LOCAL_Trim)]
-                                # else:
-                                #     frame = [i for i in range(int(action.frame_range[0]), int(action.frame_range[1])+1)]
+                if Global_Settings.Post_Mute_Constraint:
+                    for deform_rig in deform_rigs:
+                        set_constraints_mute(deform_rig, True)
+        finally:
+            for control_rig in control_rigs:
+                if control_rig.animation_data:
+                    saved_action_name = animation_state[control_rig]["action_name"]
+                    saved_action = (
+                        bpy.data.actions.get(saved_action_name)
+                        if saved_action_name
+                        else None
+                    )
+                    control_rig.animation_data.action = saved_action
+                    if saved_action:
+                        saved_slot = find_action_slot_by_identifier(
+                            saved_action,
+                            animation_state[control_rig]["action_slot_identifier"],
+                        )
+                        if saved_slot:
+                            control_rig.animation_data.action_slot = saved_slot
 
-                                if Global_Settings.Overwrite:
-                                    check = bpy.data.actions.get(action_name)
-                                    if check:
-                                        check.name = check.name + "_temp"
-                                        new_action = bpy.data.actions.new(action_name)
-                                        check.user_remap(new_action)
-                                        bpy.data.actions.remove(check)
+            for deform_rig in deform_rigs:
+                if deform_rig.animation_data:
+                    deform_rig.animation_data.action = None
 
-                                    obj_act = [
-                                        [deform_rig, bpy.data.actions.get(action_name)]
-                                    ]
-                                else:
-                                    obj_act = [[deform_rig, None]]
+            for obj in all_rigs:
+                if obj.animation_data:
+                    saved_use_nla = animation_state[obj]["use_nla"]
+                    if saved_use_nla is not None:
+                        obj.animation_data.use_nla = saved_use_nla
 
-                                # obj_act = [[deform_rig, None]]
-                                Baked_Action = anim_utils.bake_action_objects(
-                                    obj_act,
-                                    frames=frame,
-                                    bake_options=anim_utils.BakeOptions(
-                                        only_selected=Global_Settings.BAKE_SETTINGS_Only_Selected,
-                                        do_pose=Global_Settings.BAKE_SETTINGS_Do_Pose,
-                                        do_object=Global_Settings.BAKE_SETTINGS_Do_Object,
-                                        do_visual_keying=Global_Settings.BAKE_SETTINGS_Do_Visual_Keying,
-                                        do_constraint_clear=Global_Settings.BAKE_SETTINGS_Do_Constraint_Clear,
-                                        do_parents_clear=Global_Settings.BAKE_SETTINGS_Do_Parent_Clear,
-                                        do_clean=Global_Settings.BAKE_SETTINGS_Do_Clean,
-                                        do_location=Global_Settings.BAKE_SETTINGS_Location,
-                                        do_rotation=Global_Settings.BAKE_SETTINGS_Rotation,
-                                        do_scale=Global_Settings.BAKE_SETTINGS_Scale,
-                                        do_bbone=Global_Settings.BAKE_SETTINGS_BBone,
-                                        do_custom_props=Global_Settings.BAKE_SETTINGS_Custom_Properties,
-                                    ),
-                                )
-                                # Baked_Action = anim_utils.bake_action_objects(obj_act, frames=frame, bake_options)
+            if context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
 
-                                # if Global_Settings.Overwrite:
-                                #     duplicate_check = bpy.data.actions.get(action_name)
-                                #     if duplicate_check:
-                                #
-                                #
-                                #         context.view_layer.update()
-                                #         bpy.data.actions.remove(duplicate_check)
-                                #         context.view_layer.update()
-                                #
-                                #         if Global_Settings.Clean_Empty_NLA_Strip:
-                                #             for nla_track in deform_rig.animation_data.nla_tracks:
-                                #                 for s in nla_track.strips:
-                                #                     for strip in nla_track.strips:
-                                #                         if strip.action == None:
-                                #                             nla_track.strips.remove(strip)
-                                #                             break
-
-                                Baked_Action[0].name = action_name
-
-                                if Baker.offset_keyframe_to_frame_one:
-                                    start_frame = int(Baked_Action[0].frame_range[0])
-
-                                    for channelbag in Baked_Action[0].layers[0].strips[0].channelbags:
-                                        for fcurve in channelbag.fcurves:
-                                            for kp in fcurve.keyframe_points:
-                                                kp.co.x = kp.co.x - start_frame + 1
-
-                                context.view_layer.update()
-
-                                if Global_Settings.Push_to_NLA:
-                                    if Global_Settings.Overwrite:
-                                        for (
-                                            track
-                                        ) in deform_rig.animation_data.nla_tracks:
-                                            if track.name == Baked_Action[0].name:
-                                                for _ in track.strips:
-                                                    for strip in track.strips:
-                                                        if (
-                                                            strip.action
-                                                            == Baked_Action[0]
-                                                        ):
-                                                            track.strips.remove(strip)
-                                                            break
-                                        for _ in deform_rig.animation_data.nla_tracks:
-                                            for (
-                                                track
-                                            ) in deform_rig.animation_data.nla_tracks:
-                                                if (
-                                                    len(track.strips) == 0
-                                                    and track.name
-                                                    == Baked_Action[0].name
-                                                ):
-                                                    deform_rig.animation_data.nla_tracks.remove(
-                                                        track
-                                                    )
-                                                    break
-
-                                    track = deform_rig.animation_data.nla_tracks.new()
-                                    track.name = Baked_Action[0].name
-
-                                    track.strips.new(
-                                        Baked_Action[0].name,
-                                        int(Baked_Action[0].frame_range[0]),
-                                        Baked_Action[0],
-                                    )
-                                    # deform_rig.animation_data.nla_tracks.new().strips.new(Baked_Action[0].name, action.frame_range[0], Baked_Action[0])
-                                    # deform_rig.animation_data.nla_tracks.new().strips.new(Baked_Action[0].name, 0, Baked_Action[0])
-
-                        # for nla_track_pair in nla_track_state:
-                        #     print(nla_track_pair[1])
-                        #     nla_track_pair[0].mute = nla_track_pair[1]
-
-                        if Global_Settings.Post_Mute_Constraint:
-                            Pose_Bone = deform_rig.pose.bones
-                            for bone in Pose_Bone:
-                                for constraint in bone.constraints:
-                                    constraint.mute = True
-
-                        if control_rig.animation_data:
-                            if control_rig.animation_data.action:
-                                control_rig.animation_data.action = CTRL_Save_Use_ACTION
-
-                        if deform_rig.animation_data:
-                            if deform_rig.animation_data.action:
-                                deform_rig.animation_data.action = None
-
-                        # control_rig.animation_data.use_nla = CTRL_Save_Use_NLA
-                        # deform_rig.animation_data.use_nla = DEF_Save_Use_NLA
-
-                        # vis = deform_rig.hide_get()
-                        # vis_view = deform_rig.hide_viewport
-                        # ctrl_vis = control_rig.hide_get()
-                        # ctrl_vis_view = control_rig.hide_viewport
-
-                        deform_rig.hide_set(False)
-                        deform_rig.hide_viewport = False
-                        control_rig.hide_set(False)
-                        control_rig.hide_viewport = False
-
-                        bpy.ops.object.mode_set(mode="OBJECT")
-                        bpy.ops.object.select_all(action="DESELECT")
-                        deform_rig.select_set(True)
-                        context.view_layer.objects.active = deform_rig
-
-                        deform_rig.hide_set(False)
-                        deform_rig.hide_viewport = False
-
-                        control_rig.hide_set(True)
-                        control_rig.hide_viewport = True
-
-        if control_rig.animation_data:
-            if CTRL_Save_Use_NLA is not None:
-                control_rig.animation_data.use_nla = CTRL_Save_Use_NLA
-
-        if deform_rig.animation_data:
-            if DEF_Save_Use_NLA is not None:
-                deform_rig.animation_data.use_nla = DEF_Save_Use_NLA
+            bpy.ops.object.select_all(action="DESELECT")
+            for deform_rig in deform_rigs:
+                deform_rig.hide_set(False)
+                deform_rig.hide_viewport = False
+                deform_rig.select_set(True)
+            for control_rig in control_rigs:
+                control_rig.hide_set(True)
+                control_rig.hide_viewport = True
+            if deform_rigs:
+                context.view_layer.objects.active = deform_rigs[0]
 
         return {"FINISHED"}
 
@@ -1403,9 +1633,12 @@ classes = [
     GRT_Action_Bakery_Set_Frame_Range_To_Action,
     GRT_Load_Action_Menu,
     GRT_Bake_Action_Bakery,
+    GRT_Action_Bakery_Rig_Pair_List_Operator,
     GRT_Action_Bakery_List_Operator,
     GRT_UL_Action_Bakery_List,
+    GRT_UL_Action_Bakery_Rig_Pair_List,
     GRT_Action_Bakery_Property_Group,
+    GRT_Action_Bakery_Rig_Pair_Property_Group,
     GRT_Action_Bakery_Global_Settings_Property_Group,
     GRT_PT_Action_Bakery,
     GRT_OT_Toggle_Rig,
@@ -1420,6 +1653,10 @@ def register():
         type=GRT_Action_Bakery_Property_Group
     )
     bpy.types.Scene.GRT_Action_Bakery_Index = bpy.props.IntProperty()
+    bpy.types.Scene.GRT_Action_Bakery_Rig_Pairs = bpy.props.CollectionProperty(
+        type=GRT_Action_Bakery_Rig_Pair_Property_Group
+    )
+    bpy.types.Scene.GRT_Action_Bakery_Rig_Pair_Index = bpy.props.IntProperty()
 
     bpy.types.Scene.GRT_Action_Bakery_Global_Settings = bpy.props.PointerProperty(
         type=GRT_Action_Bakery_Global_Settings_Property_Group
@@ -1432,6 +1669,8 @@ def unregister():
 
     del bpy.types.Scene.GRT_Action_Bakery
     del bpy.types.Scene.GRT_Action_Bakery_Index
+    del bpy.types.Scene.GRT_Action_Bakery_Rig_Pairs
+    del bpy.types.Scene.GRT_Action_Bakery_Rig_Pair_Index
     del bpy.types.Scene.GRT_Action_Bakery_Global_Settings
 
 

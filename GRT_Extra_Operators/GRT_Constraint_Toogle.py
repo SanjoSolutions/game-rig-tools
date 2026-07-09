@@ -60,10 +60,18 @@ class GRT_Constraint_Game_Rig_Toogle(bpy.types.Operator):
         scn = context.scene
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
 
-        control_rig = Global_Settings.Source_Armature
-        deform_rig = Global_Settings.Target_Armature
+        deform_rigs = []
+        if hasattr(scn, "GRT_Action_Bakery_Rig_Pairs"):
+            for pair in scn.GRT_Action_Bakery_Rig_Pairs:
+                if pair.Source_Armature and pair.Target_Armature:
+                    if pair.Source_Armature != pair.Target_Armature:
+                        if pair.Target_Armature not in deform_rigs:
+                            deform_rigs.append(pair.Target_Armature)
 
-        if deform_rig:
+        if len(deform_rigs) == 0 and Global_Settings.Target_Armature:
+            deform_rigs.append(Global_Settings.Target_Armature)
+
+        for deform_rig in deform_rigs:
             Pose_Bone = deform_rig.pose.bones
 
             for bone in Pose_Bone:
