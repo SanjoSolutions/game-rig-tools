@@ -1,0 +1,26 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Blender temporary/backup files
+*.blend1
+*.blend2
+*.blend@
+*.blend~
+
+# Local environments and editor files
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+.DS_Store
+
+# Test/cache output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
