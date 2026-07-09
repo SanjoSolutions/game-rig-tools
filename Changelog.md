@@ -4,6 +4,7 @@
 - Fixed overwrite cleanup for multi-rig bakes when Blender removes an action that was active before baking.
 - Removed the standalone Control Rig/Game Rig panel controls; selected rig-pair rows now drive pair-specific controls.
 - Changed Connect/Disconnect and Toggle Rig controls to apply to every complete rig pair, with Toggle Rig using the first pair as the visibility basis.
+- Baked NLA tracks now use the original source action name while keeping the baked action name on the strip/action.
 
 GRT v4.2.1 - 06/8/2024
 

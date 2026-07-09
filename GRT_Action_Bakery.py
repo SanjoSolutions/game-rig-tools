@@ -1407,15 +1407,16 @@ def offset_action_to_frame_one(action):
             kp.co.x = kp.co.x - start_frame + 1
 
 
-def push_action_to_nla(obj, action, overwrite):
+def push_action_to_nla(obj, action, track_name, overwrite):
     if not obj or not action:
         return
 
     animation_data = obj.animation_data_create()
+    nla_track_name = track_name if track_name else action.name
 
     if overwrite:
         for track in animation_data.nla_tracks:
-            if track.name == action.name:
+            if track.name == nla_track_name:
                 for _ in track.strips:
                     for strip in track.strips:
                         track.strips.remove(strip)
@@ -1423,12 +1424,12 @@ def push_action_to_nla(obj, action, overwrite):
 
         for _ in animation_data.nla_tracks:
             for track in animation_data.nla_tracks:
-                if len(track.strips) == 0 and track.name == action.name:
+                if len(track.strips) == 0 and track.name == nla_track_name:
                     animation_data.nla_tracks.remove(track)
                     break
 
     track = animation_data.nla_tracks.new()
-    track.name = action.name
+    track.name = nla_track_name
     track.strips.new(action.name, int(action.frame_range[0]), action)
 
 
@@ -1578,7 +1579,10 @@ class GRT_Bake_Action_Bakery(bpy.types.Operator):
                 if Global_Settings.Push_to_NLA:
                     for deform_rig in deform_rigs:
                         push_action_to_nla(
-                            deform_rig, baked_action, Global_Settings.Overwrite
+                            deform_rig,
+                            baked_action,
+                            action.name,
+                            Global_Settings.Overwrite,
                         )
 
                 if Global_Settings.Post_Mute_Constraint:
