@@ -624,6 +624,7 @@ class GRT_PT_Action_Bakery(bpy.types.Panel):
 
         col = layout.column(align=True)
         col.scale_y = 2
+        col.operator_context = "INVOKE_DEFAULT"
 
         if not control_rig:
             col.enabled = False

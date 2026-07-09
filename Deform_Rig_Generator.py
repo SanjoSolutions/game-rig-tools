@@ -160,8 +160,6 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
-        sync_selected_rig_pair_to_global_settings(context)
-
         layout = self.layout
 
         scn = context.scene
@@ -170,9 +168,8 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
         Global_Settings = scn.GRT_Action_Bakery_Global_Settings
         Action_Bakery = scn.GRT_Action_Bakery
 
-        pair = get_selected_rig_pair(context)
-        control_rig = pair.Source_Armature if pair else Global_Settings.Source_Armature
-        deform_rig = pair.Target_Armature if pair else Global_Settings.Target_Armature
+        control_rig = Global_Settings.Source_Armature
+        deform_rig = Global_Settings.Target_Armature
 
         if Global_Settings.use_post_generation_script and Global_Settings.post_generation_script != None:
             layout.label(text="Use Post Generation Script is On", icon="INFO")
@@ -199,20 +196,12 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
             box.separator()
 
             if self.Use_Regenerate_Rig:
-                if pair:
-                    box.prop(
-                        pair,
-                        "Target_Armature",
-                        text="Game Rig",
-                        icon="ARMATURE_DATA",
-                    )
-                else:
-                    box.prop(
-                        Global_Settings,
-                        "Target_Armature",
-                        text="Game Rig",
-                        icon="ARMATURE_DATA",
-                    )
+                box.prop(
+                    Global_Settings,
+                    "Target_Armature",
+                    text="Game Rig",
+                    icon="ARMATURE_DATA",
+                )
 
             else:
                 box.prop(self, "Deform_Armature_Name", text="Name")
@@ -380,8 +369,6 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
     #        layout.prop(self, "RIGIFY_Disable_Stretch", text="Disable Rigify Stretch")
 
     def execute(self, context):
-        sync_selected_rig_pair_to_global_settings(context)
-
         object = context.object
 
         scn = context.scene
@@ -389,8 +376,8 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
         Action_Bakery = scn.GRT_Action_Bakery
 
         pair = get_selected_rig_pair(context)
-        control_rig = pair.Source_Armature if pair else Global_Settings.Source_Armature
-        deform_rig = pair.Target_Armature if pair else Global_Settings.Target_Armature
+        control_rig = Global_Settings.Source_Armature
+        deform_rig = Global_Settings.Target_Armature
 
         if self.Hierarchy_Mode == "KEEP_EXISTING":
             self.Rigify_Hierarchy_Fix = False
@@ -446,6 +433,11 @@ class GRT_Generate_Game_Rig(bpy.types.Operator):
                         Global_Settings.Target_Armature = game_rig
                         if pair:
                             pair.Target_Armature = game_rig
+
+                if not self.Use_Legacy:
+                    Global_Settings.Target_Armature = game_rig
+                    if pair:
+                        pair.Target_Armature = game_rig
 
                 game_rig.display_type = "SOLID"
                 game_rig.show_in_front = True
