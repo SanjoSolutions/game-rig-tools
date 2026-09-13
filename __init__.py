@@ -10,6 +10,7 @@ from . import Deform_Rig_Panel
 from . import Preferences
 
 from . import GRT_Action_Bakery
+from .GRT_Godot_Import import glTF2ExportUserExtension
 from . import addition
 
 current_path = pathlib.Path(__file__).parent

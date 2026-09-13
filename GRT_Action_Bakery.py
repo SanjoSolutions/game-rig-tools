@@ -1610,6 +1610,9 @@ class GRT_Bake_Action_Bakery(bpy.types.Operator):
             for deform_rig in deform_rigs:
                 if deform_rig.animation_data:
                     deform_rig.animation_data.action = None
+                    # Each baked action must evaluate independently during import.
+                    for track in deform_rig.animation_data.nla_tracks:
+                        track.is_solo = False
 
             for obj in all_rigs:
                 if obj.animation_data:

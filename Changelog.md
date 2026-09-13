@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Godot imports now export configured baked game rigs and their assigned actions while preserving source rigs for Blender authoring.
 - Added Action Bakery rig pairs so one source action can bake multiple control/game rig pairs into one shared multi-slot baked action.
 - Fixed overwrite cleanup for multi-rig bakes when Blender removes an action that was active before baking.
 - Removed the standalone Control Rig/Game Rig panel controls; selected rig-pair rows now drive pair-specific controls.
